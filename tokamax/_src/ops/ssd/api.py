@@ -5,14 +5,13 @@ from typing import Literal
 
 import immutabledict
 import jax
-from tokamax._src import gpu_utils
 from tokamax._src.ops.ssd import base
-from tokamax._src.ops.ssd import pallas_triton
+from tokamax._src.ops.ssd.pallas import implementation as pallas_impl
 
-type Implementation = Literal['xla', 'triton']
+type Implementation = Literal['xla', 'pallas']
 
 IMPLEMENTATIONS = immutabledict.immutabledict(
-  xla=base.SSD(), triton=pallas_triton.PallasTritonSSD()
+  xla=base.SSD(), pallas=pallas_impl.PallasSSD()
 )
 
 
@@ -27,7 +26,7 @@ def ssd(
 ) -> base.Outputs:
   """Return SSD sequence outputs and final state from discretized inputs."""
   if implementation is None:
-    implementation = 'triton' if gpu_utils.has_triton_support() else 'xla'
+    implementation = 'pallas' if jax.default_backend() == 'gpu' else 'xla'
   if implementation not in IMPLEMENTATIONS:
     raise ValueError(f'Unknown SSD implementation: {implementation}')
   return IMPLEMENTATIONS[implementation](x, log_decay, b, c, initial_state)

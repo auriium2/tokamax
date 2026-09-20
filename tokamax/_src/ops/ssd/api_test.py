@@ -5,13 +5,9 @@ import functools
 from absl.testing import absltest
 from absl.testing import parameterized
 import jax
-from jax.experimental import pallas as pl
 import jax.numpy as jnp
 import numpy as np
 import tokamax
-from tokamax._src.ops import op
-from tokamax._src.ops.ssd import api
-from tokamax._src.ops.ssd import pallas_triton
 
 
 def make_inputs(length: int) -> tuple[jax.Array, ...]:
@@ -48,39 +44,6 @@ class SSDTest(parameterized.TestCase):
     )
     np.testing.assert_allclose(actual_final, final, atol=2e-4, rtol=2e-4)
 
-  @parameterized.product(length=(7, 65), block_p=(4, 16))
-  def test_interpreted_pallas_tails(self, length: int, block_p: int) -> None:
-    inputs = make_inputs(length)
-    x, _, _, _, initial = inputs
-    kernel = functools.partial(pallas_triton.recurrence_kernel, block_p=block_p)
-    call = pl.pallas_call(
-      kernel,
-      out_shape=(
-        jax.ShapeDtypeStruct(x.shape, x.dtype),
-        jax.ShapeDtypeStruct(initial.shape, initial.dtype),
-      ),
-      grid=(1, x.shape[2], pl.cdiv(x.shape[3], block_p)),
-      interpret=True,
-    )
-    actual = call(*inputs)
-    expected = tokamax.ssd(*inputs, implementation='xla')
-    for got, want in zip(actual, expected, strict=True):
-      np.testing.assert_allclose(got, want, atol=2e-4, rtol=2e-4)
-
-  def test_tuning_configuration_serialization(self) -> None:
-    bound = api.IMPLEMENTATIONS['triton'].bind(*make_inputs(7))
-    self.assertLen(bound.autotuning_configs, 8)
-    self.assertIn(bound.heuristics_config, bound.autotuning_configs)
-    abstract = jax.tree.map(
-      lambda value: jax.ShapeDtypeStruct(value.shape, value.dtype),
-      make_inputs(7),
-    )
-    bound = api.IMPLEMENTATIONS['triton'].bind(*abstract)
-    restored = op.BOUND_ARGS_ADAPTER.validate_json(
-      op.BOUND_ARGS_ADAPTER.dump_json(bound)
-    )
-    self.assertEqual(restored.autotuning_cache_key, bound.autotuning_cache_key)
-
   def test_invalid_inputs(self) -> None:
     inputs = make_inputs(7)
     with self.assertRaises(TypeError):
@@ -92,11 +55,11 @@ class SSDTest(parameterized.TestCase):
     with self.assertRaises(ValueError):
       tokamax.ssd(*inputs, implementation='unknown')
 
-  def test_explicit_triton_rejects_cpu(self) -> None:
+  def test_explicit_pallas_rejects_cpu(self) -> None:
     if jax.default_backend() != 'cpu':
       self.skipTest('CPU-only dispatch check')
     with self.assertRaises(NotImplementedError):
-      tokamax.ssd(*make_inputs(7), implementation='triton')
+      tokamax.ssd(*make_inputs(7), implementation='pallas')
 
 
 if __name__ == '__main__':
