@@ -28,6 +28,22 @@ We currently support the following GPU kernels:
 *   `tokamax.layer_norm`
     ([Layer normalization](https://arxiv.org/abs/1607.06450) and
     [Root Mean Squared normalization](https://arxiv.org/abs/1910.07467)).
+*   `tokamax.ssd` (experimental Mamba2 SSD sequence forward, float32, XLA or
+    Pallas-Triton on Ampere and newer GPUs).
+
+`ssd(x, log_decay, b, c, initial_state, implementation="triton")` returns
+`(outputs, final_state)`. For each head, it evaluates
+`S_t = exp(log_decay_t) * S_previous + outer(x_t, b_t)` and `y_t = S_t @ c_t`.
+Inputs are already discretized: `x` includes the timestep multiplier and
+`log_decay` is `dt * A`. Shapes are `[batch, length, heads, head_dim]` for `x`,
+`[batch, length, heads]` for `log_decay`, `[batch, length, groups, state_dim]`
+for `b` and `c`, and `[batch, heads, head_dim, state_dim]` for the state.
+Heads share B/C parameters in contiguous groups, with `heads % groups == 0`.
+The operation supports nonzero initial state and dimension tails. It does not
+provide a decoding API, a custom backward kernel, or the surrounding Mamba2 layer.
+An explicit `implementation="triton"` fails on unsupported devices rather than
+falling back to XLA. The Triton operation exposes tile size and warp count through
+the existing Tokamax autotuning interface.
 
 And the following for both GPU and TPU:
 
